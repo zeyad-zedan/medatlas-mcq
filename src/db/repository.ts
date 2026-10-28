@@ -3172,7 +3172,7 @@ export async function getExamSessionForStudent(
           difficulty: (source.difficulty || 'Medium') as DifficultyLevel,
           tags: source.tags || '',
           diagramSvg: source.diagramSvg || liveQ?.diagramSvg || '',
-          pageNumber: source.pageNumber ?? null,
+          pageNumber: source.pageNumber ?? liveQ?.pageNumber ?? null,
           status: (liveQ?.status || 'published') as ContentStatus,
         };
 
@@ -3184,7 +3184,7 @@ export async function getExamSessionForStudent(
         const clientQ = formatQuestionForClient(canonicalQ, item.permutation, hideAnswers);
         return {
           ...clientQ,
-          pageNumber: canonicalQ.pageNumber ?? null,
+          pageNumber: canonicalQ.pageNumber ?? liveQ?.pageNumber ?? null,
           lecturePdfUrl:
             snapshot?.lecturePdfUrl ||
             (liveQ ? lPdfMap.get(liveQ.lectureId) : null) ||
@@ -3400,6 +3400,8 @@ export async function saveSessionQuestionAnswer(
           explanationD: answeredQ.explanationD,
           difficulty: answeredQ.difficulty,
           tags: answeredQ.tags,
+          diagramSvg: answeredQ.diagramSvg || '',
+          pageNumber: answeredQ.pageNumber ?? null,
           version: answeredQ.version,
         });
 
@@ -3636,6 +3638,8 @@ export async function completeExamSession(
           explanationD: q.explanationD,
           difficulty: q.difficulty,
           tags: q.tags,
+          diagramSvg: q.diagramSvg || '',
+          pageNumber: q.pageNumber ?? null,
           version: q.version,
         });
 
@@ -3981,6 +3985,8 @@ export async function getStudentDashboardAnalytics(userUid: string) {
               explanationD: q.explanationD,
               difficulty: q.difficulty,
               tags: q.tags,
+              diagramSvg: q.diagramSvg || '',
+              pageNumber: q.pageNumber ?? null,
               version: q.version,
             });
 

@@ -286,10 +286,13 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
           : 1;
       setCurrentPage(startPage);
       setPageInput(String(startPage));
-      setZoomPercent(100);
-      setTotalPages(null);
     }
-  }, [isOpen, initialPage, pdfUrl]);
+  }, [isOpen, initialPage]);
+
+  useEffect(() => {
+    setTotalPages(null);
+    setZoomPercent(100);
+  }, [pdfUrl]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -537,9 +540,12 @@ export const PdfSlideViewer: React.FC<PdfSlideViewerProps> = ({
         : 1;
     setCurrentPage(startPage);
     setPageInput(String(startPage));
-    setZoomPercent(100);
+  }, [initialPage]);
+
+  useEffect(() => {
     setTotalPages(null);
-  }, [initialPage, pdfUrl]);
+    setZoomPercent(100);
+  }, [pdfUrl]);
 
   const handlePageChange = (newPage: number) => {
     let valid = Math.max(1, Math.floor(newPage));
