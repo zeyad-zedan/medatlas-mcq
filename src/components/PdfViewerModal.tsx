@@ -15,6 +15,24 @@ import {
 } from 'lucide-react';
 
 /* -------------------------------------------------------------------------- */
+/* Document Cache (Prevents re-downloading/re-parsing on page turns/re-render)*/
+/* -------------------------------------------------------------------------- */
+const pdfDocPromiseCache = new Map<string, Promise<any>>();
+
+function getCachedPdfDocument(pdfUrl: string, pdfjs: any): Promise<any> {
+  const existing = pdfDocPromiseCache.get(pdfUrl);
+  if (existing) return existing;
+
+  const promise = pdfjs.getDocument({
+    url: pdfUrl,
+    cMapPacked: true,
+  }).promise;
+
+  pdfDocPromiseCache.set(pdfUrl, promise);
+  return promise;
+}
+
+/* -------------------------------------------------------------------------- */
 /* High-Performance Native Canvas PDF Renderer (PDF.js)                      */
 /* Fixes Android/iOS/Tablet browser issue where <iframe> opens external app   */
 /* -------------------------------------------------------------------------- */
@@ -41,7 +59,13 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
   const [error, setError] = useState<string | null>(null);
   const renderTaskRef = useRef<any>(null);
 
-  // Helper to ensure PDF.js is loaded
+  // Keep latest callback in a ref to decouple effect dependency
+  const onTotalPagesResolvedRef = useRef(onTotalPagesResolved);
+  useEffect(() => {
+    onTotalPagesResolvedRef.current = onTotalPagesResolved;
+  });
+
+  // Helper to ensure PDF.js script is loaded
   const getPdfJs = async (): Promise<any> => {
     if (typeof window === 'undefined') return null;
     if ((window as any).pdfjsLib) return (window as any).pdfjsLib;
@@ -61,7 +85,7 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
     });
   };
 
-  // 1. Fetch & parse PDF document
+  // 1. Fetch & parse PDF document (Runs ONLY when pdfUrl changes)
   useEffect(() => {
     let isCancelled = false;
     setLoadingDoc(true);
@@ -75,16 +99,11 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
         }
         pdfjs.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.js';
 
-        const loadingTask = pdfjs.getDocument({
-          url: pdfUrl,
-          cMapPacked: true,
-        });
-
-        const doc = await loadingTask.promise;
+        const doc = await getCachedPdfDocument(pdfUrl, pdfjs);
         if (!isCancelled) {
           setPdfDoc(doc);
           setLoadingDoc(false);
-          onTotalPagesResolved?.(doc.numPages);
+          onTotalPagesResolvedRef.current?.(doc.numPages);
         }
       } catch (err: any) {
         if (!isCancelled) {
@@ -100,7 +119,7 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [pdfUrl, onTotalPagesResolved]);
+  }, [pdfUrl]);
 
   // 2. Render Page onto Canvas
   const renderCurrentPage = useCallback(async () => {
@@ -120,10 +139,11 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
       const targetPageNum = Math.min(Math.max(1, pageNumber), pdfDoc.numPages);
       const page = await pdfDoc.getPage(targetPageNum);
       const canvas = canvasRef.current;
-      if (!canvas) return;
+      const container = containerRef.current;
+      if (!canvas || !container) return;
 
       const unscaledViewport = page.getViewport({ scale: 1 });
-      const containerWidth = containerRef.current.clientWidth || 700;
+      const containerWidth = container.clientWidth || 700;
 
       // Fit to container width with comfortable margin
       const availableWidth = Math.max(280, containerWidth - 32);
@@ -163,7 +183,7 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
     renderCurrentPage();
   }, [renderCurrentPage]);
 
-  // Responsive re-fit on resize or orientation change
+  // Responsive re-fit on resize or orientation change (debounced)
   useEffect(() => {
     let timeoutId: any;
     const handleResize = () => {
@@ -184,11 +204,12 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
       ref={containerRef}
       className={`w-full h-full relative overflow-auto bg-slate-950 flex flex-col items-center justify-start p-3 sm:p-4 select-none touch-pan-x touch-pan-y ${className}`}
     >
-      {(loadingDoc || (renderingPage && !canvasRef.current?.width)) && (
+      {/* Initial load overlay: Only displayed when first loading the document */}
+      {loadingDoc && !pdfDoc && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-xs z-10 space-y-3">
           <Loader2 className="w-8 h-8 text-amber-400 animate-spin" />
           <p className="text-xs font-semibold text-slate-300">
-            {loadingDoc ? 'Loading Lecture Slide Deck...' : 'Rendering Slide...'}
+            Loading Lecture Slide Deck...
           </p>
         </div>
       )}
@@ -252,6 +273,10 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
   const [pageInput, setPageInput] = useState<string>('1');
   const [zoomPercent, setZoomPercent] = useState<number>(100);
   const [totalPages, setTotalPages] = useState<number | null>(null);
+
+  const handleTotalPages = useCallback((total: number) => {
+    setTotalPages((prev) => (prev === total ? prev : total));
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -447,7 +472,7 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
               pdfUrl={cleanPdfUrl}
               pageNumber={currentPage}
               zoomPercent={zoomPercent}
-              onTotalPagesResolved={(total) => setTotalPages(total)}
+              onTotalPagesResolved={handleTotalPages}
             />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-3 bg-white">
@@ -500,6 +525,10 @@ export const PdfSlideViewer: React.FC<PdfSlideViewerProps> = ({
   const [pageInput, setPageInput] = useState<string>('1');
   const [zoomPercent, setZoomPercent] = useState<number>(100);
   const [totalPages, setTotalPages] = useState<number | null>(null);
+
+  const handleTotalPages = useCallback((total: number) => {
+    setTotalPages((prev) => (prev === total ? prev : total));
+  }, []);
 
   useEffect(() => {
     const startPage =
@@ -693,7 +722,7 @@ export const PdfSlideViewer: React.FC<PdfSlideViewerProps> = ({
             pdfUrl={cleanPdfUrl}
             pageNumber={currentPage}
             zoomPercent={zoomPercent}
-            onTotalPagesResolved={(total) => setTotalPages(total)}
+            onTotalPagesResolved={handleTotalPages}
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-2 bg-white">
